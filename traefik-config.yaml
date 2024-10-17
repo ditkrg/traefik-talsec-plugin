@@ -1,0 +1,20 @@
+http:
+  routers:
+    app:
+      rule: host(`mygoogle.com`)
+      service: app
+      middlewares:
+        - talsec-plugin
+
+  services:
+    app:
+      loadBalancer:
+        servers:
+          - url: http://web
+
+  middlewares:
+    talsec-plugin:
+      plugin:
+        talsec:
+          CONFIGURATION_PATH: /config.json
+          DECRYPTION_KEYS: {}

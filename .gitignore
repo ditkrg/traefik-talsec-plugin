@@ -1,0 +1,8 @@
+.gitcookies
+.idea
+.vscode/
+dist/
+builds/
+*.wasm
+.env
+config.json

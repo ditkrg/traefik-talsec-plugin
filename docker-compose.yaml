@@ -1,0 +1,26 @@
+services:
+  traefik:
+    image: traefik:v3.1.0
+    command:
+      - --api.insecure=true
+      - --providers.docker
+      - "--experimental.localPlugins.talsec.moduleName=github.com/ditkrg/traefik-talsec-plugin"
+      - "--providers.file.directory=/configs"
+    ports:
+      - "80:80"
+      - "8080:8080"
+    volumes:
+      # So that Traefik can listen to the Docker events
+      - /var/run/docker.sock:/var/run/docker.sock
+
+      - ./plugin.wasm:/plugins-local/src/github.com/ditkrg/traefik-talsec-plugin/plugin.wasm
+      - ./.traefik.yml:/plugins-local/src/github.com/ditkrg/traefik-talsec-plugin/.traefik.yml
+      - ./traefik-config.yaml:/configs/traefik-config.yaml
+
+      - ./config.json:/config.json
+
+
+  web:
+    image: yeasy/simple-web
+    ports:
+      - "8081:80"

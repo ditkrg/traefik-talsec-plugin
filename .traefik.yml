@@ -1,0 +1,7 @@
+displayName: Talsec Plugin
+runtime: wasm
+type: middleware
+
+summary: "Talsec authentication plugin"
+
+testData: {}
