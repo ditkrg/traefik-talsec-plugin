@@ -1,16 +1,17 @@
 package services
 
 import (
+	"github.com/ditkrg/traefik-talsec-plugin/internal/models"
 	"github.com/http-wasm/http-wasm-guest-tinygo/handler/api"
 )
 
 type AppiCryptService struct {
-	// Opts *options.AppiCryptOptions
+	Configs *models.AppiCryptConfig
 }
 
-func NewAppiCryptService() *AppiCryptService {
+func NewAppiCryptService(configs *models.AppiCryptConfig) *AppiCryptService {
 	return &AppiCryptService{
-		// Opts: opts,
+		Configs: configs,
 	}
 }
 
