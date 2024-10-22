@@ -1,10 +1,17 @@
 http:
   routers:
     app:
-      rule: host(`mygoogle.com`)
+      rule: PathPrefix(`/v1/`) && host(`mygoogle.com`)
       service: app
       middlewares:
         - talsec-plugin
+        - strip
+
+    app2:
+      rule: host(`mygoogle.com`)
+      service: app
+      middlewares:
+        - strip
 
   services:
     app:
@@ -13,8 +20,13 @@ http:
           - url: http://web
 
   middlewares:
+    strip:
+      stripPrefix:
+        prefixes:
+          - /v1/self-onboarding/complete
+          - /v1/devices/self
+        forceSlash: false
+
     talsec-plugin:
       plugin:
-        talsec:
-          CONFIGURATION_PATH: /config.json
-          DECRYPTION_KEYS: {}
+        talsec: {}

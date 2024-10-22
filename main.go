@@ -35,5 +35,7 @@ func main() {
 
 	var appiCryptService = services.NewAppiCryptService(appiCryptConfig)
 
+	handler.Host.EnableFeatures(api.FeatureBufferRequest)
+
 	handler.HandleRequestFn = appiCryptService.HandleRequest
 }
