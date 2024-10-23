@@ -1,7 +1,6 @@
 package services
 
 import (
-	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rsa"
@@ -15,14 +14,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
-	"strconv"
+	"reflect"
 	"strings"
 	"time"
 
 	"github.com/ditkrg/traefik-talsec-plugin/internal/models"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/http-wasm/http-wasm-guest-tinygo/handler/api"
 )
 
 type AppiCryptService struct {
@@ -35,89 +32,42 @@ func NewAppiCryptService(configs *models.AppiCryptConfig) *AppiCryptService {
 	}
 }
 
-func (a *AppiCryptService) HandleRequest(req api.Request, resp api.Response) (next bool, reqCtx uint32) {
-	encryptedData, ok := req.Headers().Get(a.Configs.HeaderName)
+func (a *AppiCryptService) HandleRequest(encryptedData *string, requestMethod string, requestPath string, requestBody io.ReadCloser) error {
 
-	if !ok {
-		err := errors.New("Header not found")
-		resp.Body().Write([]byte(err.Error()))
-		resp.SetStatusCode(http.StatusUnauthorized)
-		return false, 0
-	}
-
-	if encryptedData == "" {
-		err := errors.New("Header is empty")
-		resp.Body().Write([]byte(err.Error()))
-		resp.SetStatusCode(http.StatusUnauthorized)
-		return false, 0
-	}
-
-	expectedNonce, err := a.GenerateNonce(req)
-
+	expectedNonce, err := a.GenerateNonce(requestMethod, requestPath, requestBody)
 	if err != nil {
-		resp.Body().Write([]byte(err.Error()))
-		resp.SetStatusCode(http.StatusUnauthorized)
-		return false, 0
+		return err
 	}
 
 	claims, err := a.DecodeJwtAndVerify(encryptedData)
 	if err != nil {
-		resp.Body().Write([]byte(err.Error()))
-		resp.SetStatusCode(http.StatusUnauthorized)
-		return false, 0
+		return err
 	}
 
 	nonce, deviceData, err := a.DecryptCryptogram(claims)
 	if err != nil {
-		resp.Body().Write([]byte(err.Error()))
-		resp.SetStatusCode(http.StatusUnauthorized)
-		return false, 0
+		return err
 	}
 
 	if err := a.ValidateCryptogram(expectedNonce, nonce, deviceData); err != nil {
-		resp.Body().Write([]byte(err.Error()))
-		resp.SetStatusCode(http.StatusUnauthorized)
-		return false, 0
+		return err
 	}
 
-	return true, 0
+	return nil
 }
 
-func (a *AppiCryptService) GenerateNonce(req api.Request) ([]byte, error) {
+func (a *AppiCryptService) GenerateNonce(requestMethod string, requestPath string, requestBody io.ReadCloser) ([]byte, error) {
 
-	uri, err := url.Parse(req.GetURI())
-	if err != nil {
-		return nil, err
-	}
+	nonce := fmt.Sprintf("%s,%s", requestMethod, requestPath)
 
-	nonce := fmt.Sprintf("%s,%s", req.GetMethod(), uri.Path)
-
-	if req.GetMethod() == http.MethodGet {
+	if requestMethod == http.MethodGet {
 		return []byte(nonce), nil
 	}
 
-	contentLengthString, ok := req.Headers().Get("content-length")
-
-	if !ok {
-		return nil, errors.New("content-length header is missing")
-	}
-
-	if contentLengthString == "" {
-		return nil, errors.New("content-length header is empty")
-	}
-
-	contentLength, err := strconv.Atoi(contentLengthString)
-
-	if err != nil {
-		return nil, err
-	}
-
-	var bodyBytes = make([]byte, contentLength)
-	req.Body().Read(bodyBytes)
-	bodyReader := bytes.NewReader(bodyBytes)
+	defer requestBody.Close()
 
 	hasher := sha256.New()
-	if _, err := io.Copy(hasher, bodyReader); err != nil {
+	if _, err := io.Copy(hasher, requestBody); err != nil {
 		return nil, err
 	}
 
@@ -128,10 +78,10 @@ func (a *AppiCryptService) GenerateNonce(req api.Request) ([]byte, error) {
 	return []byte(nonce), nil
 }
 
-func (a *AppiCryptService) DecodeJwtAndVerify(appiCrypt string) (jwt.MapClaims, error) {
+func (a *AppiCryptService) DecodeJwtAndVerify(appiCrypt *string) (jwt.MapClaims, error) {
 	claims := jwt.MapClaims{}
 
-	_, err := jwt.ParseWithClaims(appiCrypt, claims, func(token *jwt.Token) (interface{}, error) {
+	_, err := jwt.ParseWithClaims(*appiCrypt, claims, func(token *jwt.Token) (interface{}, error) {
 		kid := token.Header["kid"].(string)
 		if kid == "" {
 			return nil, errors.New("kid is empty")
@@ -153,7 +103,12 @@ func (a *AppiCryptService) DecodeJwtAndVerify(appiCrypt string) (jwt.MapClaims, 
 }
 
 func (a *AppiCryptService) DecryptCryptogram(claims jwt.MapClaims) ([]byte, *models.DeviceData, error) {
+
 	cryptogram, err := getCryptogram(claims)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	var decryptionKey []byte
 
 	versionClaim := claims["version"]
@@ -176,7 +131,7 @@ func (a *AppiCryptService) DecryptCryptogram(claims jwt.MapClaims) ([]byte, *mod
 	}
 
 	if decryptionKey == nil {
-		return nil, nil, errors.New("No private key found for decryption")
+		return nil, nil, errors.New("no private key found for decryption")
 	}
 
 	bitKeySize, err := getBitKeySize(decryptionKey)
@@ -226,13 +181,7 @@ func getCryptogram(claims jwt.MapClaims) ([]byte, error) {
 		cryptogram += "="
 	}
 
-	// Decode the base64 string
-	decoded, err := base64.StdEncoding.DecodeString(cryptogram)
-	if err != nil {
-		return nil, err
-	}
-
-	return decoded, nil
+	return base64.StdEncoding.DecodeString(cryptogram)
 }
 
 func decryptData(data []byte, privateKey []byte) ([]byte, error) {
@@ -328,6 +277,10 @@ func getBitKeySize(bytes []byte) (int, error) {
 
 func (a *AppiCryptService) ValidateCryptogram(expectedNonce []byte, nonce []byte, deviceData *models.DeviceData) error {
 
+	if err := a.checkNonce(expectedNonce, nonce); err != nil {
+		return err
+	}
+
 	if err := a.checkLicensing(deviceData); err != nil {
 		return err
 	}
@@ -352,10 +305,6 @@ func (a *AppiCryptService) ValidateCryptogram(expectedNonce []byte, nonce []byte
 		return err
 	}
 
-	if err := a.checkNonce(expectedNonce, nonce); err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -365,7 +314,7 @@ func (a *AppiCryptService) checkLicensing(deviceData *models.DeviceData) error {
 	}
 
 	if time.Now().UnixMilli() > deviceData.Licensing.EndOfGracePeriod {
-		return errors.New("End of grace period reached")
+		return errors.New("end of grace period reached")
 	}
 
 	return nil
@@ -383,7 +332,7 @@ func (a *AppiCryptService) checkMaxAge(deviceData *models.DeviceData) error {
 		return err
 	}
 
-	difference := time.Now().Sub(deviceOccurrence)
+	difference := time.Since(deviceOccurrence)
 	differenceInSeconds := int(difference.Seconds())
 
 	if differenceInSeconds > occurrenceThreshold {
@@ -398,19 +347,19 @@ func (a *AppiCryptService) checkMaxAge(deviceData *models.DeviceData) error {
 func (a *AppiCryptService) containsAllCriticalChecks(deviceData *models.DeviceData) error {
 
 	if deviceData.Checks.PrivilegedAccess == nil {
-		return errors.New("Missing one of critical checks: privilegedAccess")
+		return errors.New("missing one of critical checks: privilegedAccess")
 	}
 
 	if deviceData.Checks.AppIntegrity == nil {
-		return errors.New("Missing one of critical checks: appIntegrity")
+		return errors.New("missing one of critical checks: appIntegrity")
 	}
 
 	if deviceData.Checks.Debug == nil {
-		return errors.New("Missing one of critical checks: debug")
+		return errors.New("missing one of critical checks: debug")
 	}
 
 	if deviceData.Checks.UnofficialStore == nil {
-		return errors.New("Missing one of critical checks: unofficialStore")
+		return errors.New("missing one of critical checks: unofficialStore")
 	}
 
 	return nil
@@ -425,11 +374,11 @@ func (a *AppiCryptService) checkAppInfoAndroid(deviceData *models.DeviceData) er
 	packageName := deviceData.AppInfo.PackageName
 
 	if !contains(appInfoConfig.PackageNames, packageName) {
-		return errors.New("Invalid package name")
+		return errors.New("invalid package name")
 	}
 
 	if !contains(appInfoConfig.SigningCertificateHashes, deviceData.AppInfo.SigningCertificateHash) {
-		return errors.New("Invalid signing certificate hash")
+		return errors.New("invalid signing certificate hash")
 	}
 
 	return nil
@@ -454,15 +403,15 @@ func (a *AppiCryptService) checkAppInfoIOs(deviceData *models.DeviceData) error 
 	}
 
 	if teamId == "" {
-		return errors.New("Missing team ID")
+		return errors.New("missing team ID")
 	}
 
 	if teamId != appInfoConfig.TeamID {
-		return errors.New("Invalid team ID")
+		return errors.New("invalid team ID")
 	}
 
 	if !contains(appInfoConfig.Bundle, appInfo.Bundle) {
-		return errors.New("Invalid bundle")
+		return errors.New("invalid bundle")
 	}
 
 	return nil
@@ -509,21 +458,19 @@ func (a *AppiCryptService) checkRiskScore(deviceData *models.DeviceData) error {
 	}
 
 	if riskScore >= a.Configs.SecurityThreshold {
-		return errors.New("Risk score is too high")
+		return errors.New("risk score is too high")
 	}
 
 	return nil
 }
 
 func (a *AppiCryptService) checkNonce(expectedNonce []byte, nonce []byte) error {
-	if len(expectedNonce) != len(expectedNonce) {
+	if len(expectedNonce) != len(nonce) {
 		return errors.New("expected nonce and request nonce do not mismatch in length")
 	}
 
-	for i := range expectedNonce {
-		if expectedNonce[i] != nonce[i] {
-			return errors.New("expected nonce and request nonce do not match")
-		}
+	if !reflect.DeepEqual(expectedNonce, nonce) {
+		return errors.New("expected nonce and request nonce do not match")
 	}
 
 	return nil

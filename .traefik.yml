@@ -1,6 +1,7 @@
 displayName: Talsec Plugin
-runtime: wasm
 type: middleware
+
+import: github.com/ditkrg/traefik-talsec-plugin
 
 summary: "Talsec authentication plugin"
 

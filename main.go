@@ -1,41 +1,48 @@
-package main
+package traefik_talsec_plugin
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
-	"os"
+	"net/http"
 
 	"github.com/ditkrg/traefik-talsec-plugin/internal/models"
 	"github.com/ditkrg/traefik-talsec-plugin/internal/services"
-	"github.com/http-wasm/http-wasm-guest-tinygo/handler"
-
-	"github.com/http-wasm/http-wasm-guest-tinygo/handler/api"
 )
 
-func main() {
+type Talsec struct {
+	next             http.Handler
+	name             string
+	appiCryptService *services.AppiCryptService
+}
 
-	var appiCryptJson models.AppiCryptJson
+func CreateConfig() *models.AppiCryptConfig {
+	return &models.AppiCryptConfig{}
+}
 
-	err := json.Unmarshal(handler.Host.GetConfig(), &appiCryptJson)
-	if err != nil {
-		handler.Host.Log(api.LogLevelError, fmt.Sprintf("Could not unmarshal options: %v", err))
-		os.Exit(1)
+func New(ctx context.Context, next http.Handler, config *models.AppiCryptConfig, name string) (http.Handler, error) {
+	if err := config.Validate(); err != nil {
+		return nil, err
 	}
 
-	appiCryptConfig, err := appiCryptJson.ValidateAndConvertToConfig()
-	if err != nil {
-		handler.Host.Log(api.LogLevelError, fmt.Sprintf("could not prepare configurations successfully: %v", err))
-		os.Exit(1)
+	return &Talsec{
+		next:             next,
+		name:             name,
+		appiCryptService: services.NewAppiCryptService(config),
+	}, nil
+}
+
+func (a *Talsec) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
+	encryptedData := req.Header.Get(a.appiCryptService.Configs.HeaderName)
+	if encryptedData == "" {
+		msg := fmt.Sprintf("missing appicrypt header, key is %s", a.appiCryptService.Configs.HeaderName)
+		http.Error(rw, msg, http.StatusForbidden)
+		return
 	}
 
-	if err := appiCryptConfig.Validate(); err != nil {
-		handler.Host.Log(api.LogLevelError, fmt.Sprintf("config validation failed: %v", err))
-		os.Exit(1)
+	if err := a.appiCryptService.HandleRequest(&encryptedData, req.Method, req.URL.Path, req.Body); err != nil {
+		http.Error(rw, err.Error(), http.StatusForbidden)
+		return
 	}
 
-	var appiCryptService = services.NewAppiCryptService(appiCryptConfig)
-
-	handler.Host.EnableFeatures(api.FeatureBufferRequest)
-
-	handler.HandleRequestFn = appiCryptService.HandleRequest
+	a.next.ServeHTTP(rw, req)
 }
