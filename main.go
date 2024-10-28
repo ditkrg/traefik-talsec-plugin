@@ -2,8 +2,9 @@ package traefik_talsec_plugin
 
 import (
 	"context"
-	"fmt"
+	"log/slog"
 	"net/http"
+	"os"
 
 	"github.com/ditkrg/traefik-talsec-plugin/internal/models"
 	"github.com/ditkrg/traefik-talsec-plugin/internal/services"
@@ -33,14 +34,19 @@ func New(ctx context.Context, next http.Handler, config *models.AppiCryptConfig,
 
 func (a *Talsec) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	encryptedData := req.Header.Get(a.appiCryptService.Configs.HeaderName)
+
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil)).With("path", req.URL.Path, "method", req.Method)
+	slog.SetDefault(logger)
+
 	if encryptedData == "" {
-		msg := fmt.Sprintf("missing appicrypt header, key is %s", a.appiCryptService.Configs.HeaderName)
-		http.Error(rw, msg, http.StatusForbidden)
+		slog.Error("No encrypted data found in request")
+		http.Error(rw, "Forbidden", http.StatusForbidden)
 		return
 	}
 
 	if err := a.appiCryptService.HandleRequest(&encryptedData, req.Method, req.URL.Path, req.Body); err != nil {
-		http.Error(rw, err.Error(), http.StatusForbidden)
+		slog.Error(err.Error())
+		http.Error(rw, "Forbidden", http.StatusForbidden)
 		return
 	}
 
