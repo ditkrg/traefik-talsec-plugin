@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"reflect"
 	"strings"
@@ -63,6 +64,8 @@ func (a *AppiCryptService) GenerateNonce(requestMethod string, requestPath strin
 	if requestBody == http.NoBody {
 		return []byte(nonce), nil
 	}
+
+	slog.Error("trying-to-set-body")
 
 	defer requestBody.Close()
 
@@ -465,6 +468,9 @@ func (a *AppiCryptService) checkRiskScore(deviceData *models.DeviceData) error {
 }
 
 func (a *AppiCryptService) checkNonce(expectedNonce []byte, nonce []byte) error {
+	slog.Error(string(expectedNonce))
+	slog.Error(string(nonce))
+
 	if len(expectedNonce) != len(nonce) {
 		return errors.New("expected nonce and request nonce do not match in length")
 	}
