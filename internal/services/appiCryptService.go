@@ -466,7 +466,7 @@ func (a *AppiCryptService) checkRiskScore(deviceData *models.DeviceData) error {
 
 func (a *AppiCryptService) checkNonce(expectedNonce []byte, nonce []byte) error {
 	if len(expectedNonce) != len(nonce) {
-		return errors.New("expected nonce and request nonce do not mismatch in length")
+		return errors.New("expected nonce and request nonce do not match in length")
 	}
 
 	if !reflect.DeepEqual(expectedNonce, nonce) {
