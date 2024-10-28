@@ -21,6 +21,10 @@ func CreateConfig() *models.AppiCryptConfig {
 }
 
 func New(ctx context.Context, next http.Handler, config *models.AppiCryptConfig, name string) (http.Handler, error) {
+
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
+
 	if err := config.Validate(); err != nil {
 		return nil, err
 	}
@@ -35,17 +39,16 @@ func New(ctx context.Context, next http.Handler, config *models.AppiCryptConfig,
 func (a *Talsec) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	encryptedData := req.Header.Get(a.appiCryptService.Configs.HeaderName)
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil)).With("path", req.URL.Path, "method", req.Method)
-	slog.SetDefault(logger)
+	logger := slog.With("path", req.URL.Path, "method", req.Method)
 
 	if encryptedData == "" {
-		slog.Error("No encrypted data found in request")
+		logger.Error("No encrypted data found in request")
 		http.Error(rw, "Forbidden", http.StatusForbidden)
 		return
 	}
 
 	if err := a.appiCryptService.HandleRequest(&encryptedData, req.Method, req.URL.Path, req.Body); err != nil {
-		slog.Error(err.Error())
+		logger.Error(err.Error())
 		http.Error(rw, "Forbidden", http.StatusForbidden)
 		return
 	}
