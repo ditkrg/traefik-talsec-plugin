@@ -60,7 +60,7 @@ func (a *AppiCryptService) GenerateNonce(requestMethod string, requestPath strin
 
 	nonce := fmt.Sprintf("%s,%s", requestMethod, requestPath)
 
-	if requestMethod == http.MethodGet {
+	if requestBody == http.NoBody {
 		return []byte(nonce), nil
 	}
 
