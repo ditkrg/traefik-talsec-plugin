@@ -25,6 +25,8 @@ func New(ctx context.Context, next http.Handler, config *models.AppiCryptConfig,
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
+	slog.Info("this-is-an-example")
+
 	if err := config.Validate(); err != nil {
 		return nil, err
 	}
