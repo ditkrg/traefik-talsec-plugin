@@ -32,14 +32,13 @@ func NewAppiCryptService(configs *models.AppiCryptConfig) *AppiCryptService {
 	}
 }
 
-func (a *AppiCryptService) HandleRequest(encryptedData *string, requestMethod string, requestPath string, requestBody io.ReadCloser) error {
-
-	expectedNonce, err := a.GenerateNonce(requestMethod, requestPath, requestBody)
+func (a *AppiCryptService) HandleRequest(headers http.Header, requestMethod string, requestPath string, requestBody io.ReadCloser) error {
+	claims, err := a.DecodeJwtAndVerify(headers, a.Configs.AppiCryptHeaderName)
 	if err != nil {
 		return err
 	}
 
-	claims, err := a.DecodeJwtAndVerify(encryptedData)
+	expectedNonce, err := a.GenerateNonce(headers, requestMethod, requestPath, requestBody)
 	if err != nil {
 		return err
 	}
@@ -56,9 +55,14 @@ func (a *AppiCryptService) HandleRequest(encryptedData *string, requestMethod st
 	return nil
 }
 
-func (a *AppiCryptService) GenerateNonce(requestMethod string, requestPath string, requestBody io.ReadCloser) ([]byte, error) {
+func (a *AppiCryptService) GenerateNonce(headers http.Header, requestMethod string, requestPath string, requestBody io.ReadCloser) ([]byte, error) {
+	date := headers.Get(a.Configs.DateHeaderKey)
 
-	nonce := fmt.Sprintf("%s,%s", requestMethod, requestPath)
+	if date == "" {
+		return nil, errors.New("no date data found in request headers")
+	}
+
+	nonce := fmt.Sprintf("%s,%s,%s", date, requestMethod, requestPath)
 
 	if requestMethod == http.MethodGet || requestMethod == http.MethodDelete || requestBody == http.NoBody {
 		return []byte(nonce), nil
@@ -78,10 +82,16 @@ func (a *AppiCryptService) GenerateNonce(requestMethod string, requestPath strin
 	return []byte(nonce), nil
 }
 
-func (a *AppiCryptService) DecodeJwtAndVerify(appiCrypt *string) (jwt.MapClaims, error) {
+func (a *AppiCryptService) DecodeJwtAndVerify(headers http.Header, appiCryptHEader string) (jwt.MapClaims, error) {
+	appiCrypt := headers.Get(appiCryptHEader)
+
+	if appiCrypt == "" {
+		return nil, errors.New("no encrypted data found in request headers")
+	}
+
 	claims := jwt.MapClaims{}
 
-	_, err := jwt.ParseWithClaims(*appiCrypt, claims, func(token *jwt.Token) (interface{}, error) {
+	_, err := jwt.ParseWithClaims(appiCrypt, claims, func(token *jwt.Token) (interface{}, error) {
 		kid := token.Header["kid"].(string)
 		if kid == "" {
 			return nil, errors.New("kid is empty")

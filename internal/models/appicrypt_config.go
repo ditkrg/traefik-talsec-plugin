@@ -9,9 +9,10 @@ import (
 )
 
 type AppiCryptConfig struct {
-	DecryptionKeys map[string]string
-	AllowedKeys    map[string]string
-	HeaderName     string
+	DecryptionKeys      map[string]string
+	AllowedKeys         map[string]string
+	AppiCryptHeaderName string
+	DateHeaderKey       string
 
 	CheckConfiguration   CheckConfiguration
 	AppInfoConfiguration AppInfoConfiguration
@@ -88,8 +89,12 @@ func (c *AppiCryptConfig) Validate() error {
 func validateAppiCryptConfigurations(c *AppiCryptConfig) []string {
 	msgs := []string{}
 
-	if c.HeaderName == "" {
-		msgs = append(msgs, "error: header name cannot be empty")
+	if c.AppiCryptHeaderName == "" {
+		msgs = append(msgs, "error: appiCrypt header name cannot be empty")
+	}
+
+	if c.DateHeaderKey == "" {
+		msgs = append(msgs, "error: Date header name cannot be empty")
 	}
 
 	if c.OccurrenceThreshold < 0 {
