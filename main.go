@@ -40,7 +40,7 @@ func New(ctx context.Context, next http.Handler, config *models.AppiCryptConfig,
 func (a *Talsec) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	logger := slog.With("path", req.URL.Path, "method", req.Method)
 
-	if err := a.appiCryptService.HandleRequest(req.Header, req.Method, req.URL.Path, req.Body); err != nil {
+	if err := a.appiCryptService.HandleRequest(req); err != nil {
 		logger.Error(err.Error())
 		http.Error(rw, "Forbidden", http.StatusForbidden)
 		return

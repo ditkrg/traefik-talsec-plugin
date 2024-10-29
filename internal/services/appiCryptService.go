@@ -1,6 +1,7 @@
 package services
 
 import (
+	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rsa"
@@ -32,13 +33,13 @@ func NewAppiCryptService(configs *models.AppiCryptConfig) *AppiCryptService {
 	}
 }
 
-func (a *AppiCryptService) HandleRequest(headers http.Header, requestMethod string, requestPath string, requestBody io.ReadCloser) error {
-	claims, err := a.DecodeJwtAndVerify(headers, a.Configs.AppiCryptHeaderName)
+func (a *AppiCryptService) HandleRequest(req *http.Request) error {
+	claims, err := a.DecodeJwtAndVerify(req.Header, a.Configs.AppiCryptHeaderName)
 	if err != nil {
 		return err
 	}
 
-	expectedNonce, err := a.GenerateNonce(headers, requestMethod, requestPath, requestBody)
+	expectedNonce, err := a.GenerateNonce(req)
 	if err != nil {
 		return err
 	}
@@ -55,26 +56,28 @@ func (a *AppiCryptService) HandleRequest(headers http.Header, requestMethod stri
 	return nil
 }
 
-func (a *AppiCryptService) GenerateNonce(headers http.Header, requestMethod string, requestPath string, requestBody io.ReadCloser) ([]byte, error) {
-	date := headers.Get(a.Configs.DateHeaderKey)
+func (a *AppiCryptService) GenerateNonce(req *http.Request) ([]byte, error) {
+	date := req.Header.Get(a.Configs.DateHeaderKey)
 
 	if date == "" {
 		return nil, errors.New("no date data found in request headers")
 	}
 
-	nonce := fmt.Sprintf("%s,%s,%s", date, requestMethod, requestPath)
+	nonce := fmt.Sprintf("%s,%s,%s", date, req.Method, req.URL.Path)
 
-	if requestMethod == http.MethodGet || requestMethod == http.MethodDelete || requestBody == http.NoBody {
+	if req.Method == http.MethodGet || req.Method == http.MethodDelete || req.Body == http.NoBody {
 		return []byte(nonce), nil
 	}
 
-	defer requestBody.Close()
+	var bodyCopy bytes.Buffer
+	tee := io.TeeReader(req.Body, &bodyCopy)
 
 	hasher := sha256.New()
-	if _, err := io.Copy(hasher, requestBody); err != nil {
+	if _, err := io.Copy(hasher, tee); err != nil {
 		return nil, err
 	}
 
+	req.Body = io.NopCloser(&bodyCopy)
 	hash := hasher.Sum(nil)
 
 	nonce = fmt.Sprintf("%s,%s", nonce, hex.EncodeToString(hash))
