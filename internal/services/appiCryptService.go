@@ -72,6 +72,11 @@ func (a *AppiCryptService) GenerateNonce(req *http.Request) ([]byte, error) {
 	var bodyCopy bytes.Buffer
 	tee := io.TeeReader(req.Body, &bodyCopy)
 
+	if bodyCopy.Len() == 0 {
+		req.Body = io.NopCloser(&bodyCopy)
+		return []byte(nonce), nil
+	}
+
 	hasher := sha256.New()
 	if _, err := io.Copy(hasher, tee); err != nil {
 		return nil, err
