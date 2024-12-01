@@ -65,7 +65,7 @@ func (a *AppiCryptService) GenerateNonce(req *http.Request) ([]byte, error) {
 
 	nonce := fmt.Sprintf("%s,%s,%s", date, req.Method, req.URL.Path)
 
-	if (req.Method != http.MethodPut && req.Method != http.MethodPatch && req.Method != http.MethodPost && req.Method != http.MethodDelete) || req.Body != http.NoBody {
+	if (req.Method != http.MethodPut && req.Method != http.MethodPatch && req.Method != http.MethodPost && req.Method != http.MethodDelete) || req.Body == http.NoBody {
 		return []byte(nonce), nil
 	}
 
