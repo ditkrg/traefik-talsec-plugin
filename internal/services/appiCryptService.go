@@ -34,7 +34,7 @@ func NewAppiCryptService(configs *models.AppiCryptConfig) *AppiCryptService {
 }
 
 func (a *AppiCryptService) HandleRequest(req *http.Request) error {
-	claims, err := a.DecodeJwtAndVerify(req.Header, a.Configs.AppiCryptHeaderName)
+	claims, err := a.DecodeJwtAndVerify(req.Header)
 	if err != nil {
 		return err
 	}
@@ -60,7 +60,7 @@ func (a *AppiCryptService) GenerateNonce(req *http.Request) ([]byte, error) {
 	date := req.Header.Get(a.Configs.DateHeaderKey)
 
 	if date == "" {
-		return nil, errors.New("no date data found in request headers")
+		return nil, fmt.Errorf("no date data found in request headers, looking for key %s", a.Configs.DateHeaderKey)
 	}
 
 	nonce := fmt.Sprintf("%s,%s,%s", date, req.Method, req.URL.Path)
@@ -90,11 +90,11 @@ func (a *AppiCryptService) GenerateNonce(req *http.Request) ([]byte, error) {
 	return []byte(nonce), nil
 }
 
-func (a *AppiCryptService) DecodeJwtAndVerify(headers http.Header, appiCryptHEader string) (jwt.MapClaims, error) {
-	appiCrypt := headers.Get(appiCryptHEader)
+func (a *AppiCryptService) DecodeJwtAndVerify(headers http.Header) (jwt.MapClaims, error) {
+	appiCrypt := headers.Get(a.Configs.AppiCryptHeaderName)
 
 	if appiCrypt == "" {
-		return nil, errors.New("no encrypted data found in request headers")
+		return nil, fmt.Errorf("no encrypted data found in request headers, looking for key %s", a.Configs.AppiCryptHeaderName)
 	}
 
 	claims := jwt.MapClaims{}
@@ -331,8 +331,9 @@ func (a *AppiCryptService) checkLicensing(deviceData *models.DeviceData) error {
 		return nil
 	}
 
-	if time.Now().UnixMilli() > deviceData.Licensing.EndOfGracePeriod {
-		return errors.New("end of grace period reached")
+	timeNowUnixMilli := time.Now().UnixMilli()
+	if timeNowUnixMilli > deviceData.Licensing.EndOfGracePeriod {
+		return fmt.Errorf("end of grace period reached, server time is ahead of device time, %d > %d", timeNowUnixMilli, deviceData.Licensing.EndOfGracePeriod)
 	}
 
 	return nil
@@ -354,9 +355,9 @@ func (a *AppiCryptService) checkMaxAge(deviceData *models.DeviceData) error {
 	differenceInSeconds := int(difference.Seconds())
 
 	if differenceInSeconds > occurrenceThreshold {
-		return errors.New("occurrence difference is bigger than threshold")
+		return fmt.Errorf("occurrence difference is bigger than threshold, seconds since request sent: %d, threshold: %d", differenceInSeconds, occurrenceThreshold)
 	} else if differenceInSeconds < -60 {
-		return errors.New("occurrence timestamp is in the future")
+		return fmt.Errorf("occurrence timestamp is in the future, seconds since request sent: %d", differenceInSeconds)
 	}
 
 	return nil
@@ -365,19 +366,19 @@ func (a *AppiCryptService) checkMaxAge(deviceData *models.DeviceData) error {
 func (a *AppiCryptService) containsAllCriticalChecks(deviceData *models.DeviceData) error {
 
 	if deviceData.Checks.PrivilegedAccess == nil {
-		return errors.New("missing one of critical checks: privilegedAccess")
+		return errors.New("device data missing one of critical checks: privilegedAccess")
 	}
 
 	if deviceData.Checks.AppIntegrity == nil {
-		return errors.New("missing one of critical checks: appIntegrity")
+		return errors.New("device data missing one of critical checks: appIntegrity")
 	}
 
 	if deviceData.Checks.Debug == nil {
-		return errors.New("missing one of critical checks: debug")
+		return errors.New("device data missing one of critical checks: debug")
 	}
 
 	if deviceData.Checks.UnofficialStore == nil {
-		return errors.New("missing one of critical checks: unofficialStore")
+		return errors.New("device data missing one of critical checks: unofficialStore")
 	}
 
 	return nil
@@ -392,11 +393,11 @@ func (a *AppiCryptService) checkAppInfoAndroid(deviceData *models.DeviceData) er
 	packageName := deviceData.AppInfo.PackageName
 
 	if !contains(appInfoConfig.PackageNames, packageName) {
-		return errors.New("invalid package name")
+		return fmt.Errorf("android: invalid package name, expected one of %v, got %s", appInfoConfig.PackageNames, packageName)
 	}
 
 	if !contains(appInfoConfig.SigningCertificateHashes, deviceData.AppInfo.SigningCertificateHash) {
-		return errors.New("invalid signing certificate hash")
+		return fmt.Errorf("android: invalid signing certificate hash, expected one of %v, got %s", appInfoConfig.SigningCertificateHashes, deviceData.AppInfo.SigningCertificateHash)
 	}
 
 	return nil
@@ -421,15 +422,15 @@ func (a *AppiCryptService) checkAppInfoIOs(deviceData *models.DeviceData) error 
 	}
 
 	if teamId == "" {
-		return errors.New("missing team ID")
+		return fmt.Errorf("IOS: missing team ID")
 	}
 
 	if teamId != appInfoConfig.TeamID {
-		return errors.New("invalid team ID")
+		return fmt.Errorf("IOS: invalid team ID, expected %s, got %s", appInfoConfig.TeamID, teamId)
 	}
 
 	if !contains(appInfoConfig.Bundle, appInfo.Bundle) {
-		return errors.New("invalid bundle")
+		return fmt.Errorf("IOS: invalid bundle, expected one of %v, got %s", appInfoConfig.Bundle, appInfo.Bundle)
 	}
 
 	return nil
@@ -476,7 +477,7 @@ func (a *AppiCryptService) checkRiskScore(deviceData *models.DeviceData) error {
 	}
 
 	if riskScore >= a.Configs.SecurityThreshold {
-		return errors.New("risk score is too high")
+		return fmt.Errorf("risk score is too high, allowed risk score of %d and lower, got %d", a.Configs.SecurityThreshold, riskScore)
 	}
 
 	return nil
